@@ -1,4 +1,4 @@
-module gitter
+module github.com/OpScaleHub/git-commiter
 
 go 1.24.2
 
