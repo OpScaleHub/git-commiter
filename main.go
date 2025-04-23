@@ -81,7 +81,7 @@ func main() {
 	loginCmd.Flags().StringVar(&oidcConfig.ClientID, "client-id", "", "OIDC Client ID [required]")
 	loginCmd.Flags().StringVar(&oidcConfig.ClientSecret, "client-secret", "", "OIDC Client Secret [required]")
 	loginCmd.Flags().StringVar(&oidcConfig.RedirectURL, "redirect-url", "http://localhost:8080/callback", "OIDC Redirect URL")
-	loginCmd.Flags().StringSliceVar(&oidcConfig.Scopes, "scopes", []string{"openid", "profile", "email", "offline_access"}, "OIDC scopes to request") // Include offline_access
+	loginCmd.Flags().StringSliceVar(&oidcConfig.Scopes, "scopes", []string{"openid", "https://www.googleapis.com/auth/userinfo.profile", "https://www.googleapis.com/auth/userinfo.email"}, "OIDC scopes to request") // Include offline_access
 
 	// Commit Message Flags
 	addCommitMessageFlags(generateCommitMessageCmd)
@@ -118,14 +118,7 @@ func loginHandler(cmd *cobra.Command, args []string) {
 			log.Fatalf("Error creating Google provider: %v", err) // Use log.Fatalf
 		}
 	case "github":
-		// Note: GitHub OIDC for Actions uses a specific issuer URL format.
-		// For user login via OAuth/OIDC, the endpoints are different.
-		// This might need adjustment depending on the exact GitHub OIDC flow you intend.
-		// For standard GitHub OAuth2/OIDC login, the endpoints are typically:
-		// Issuer: https://github.com/login/oauth
-		// Auth:   https://github.com/login/oauth/authorize
-		// Token:  https://github.com/login/oauth/access_token
-		// UserInfo: https://api.github.com/user
+		// For standard GitHub OAuth2/OIDC login, the endpoints are typically: Issuer: https://github.com/login/oauth
 		// Using a generic OIDC provider setup might require more configuration or a dedicated library.
 		// Let's assume a standard OIDC setup for now, but be aware this might need changes.
 		oidcConfig.IssuerURL = "https://github.com" // Placeholder - Adjust if using a specific GitHub OIDC endpoint
@@ -134,6 +127,7 @@ func loginHandler(cmd *cobra.Command, args []string) {
 			log.Fatalf("Error creating GitHub provider (check IssuerURL): %v", err) // Use log.Fatalf
 		}
 	default:
+		// Handle unsupported provider
 		log.Printf("Error: Unsupported provider '%s'. Use 'google' or 'github'.\n", oidcConfig.Provider)
 		os.Exit(1)
 	}
@@ -150,6 +144,7 @@ func loginHandler(cmd *cobra.Command, args []string) {
 	if err != nil {
 		log.Fatalf("Error generating state: %v", err) // Use log.Fatalf
 	}
+	// Generate the authorization URL
 
 	authURL := config.AuthCodeURL(state)
 	fmt.Printf("Attempting to open your browser for authentication...\n")
@@ -160,6 +155,7 @@ func loginHandler(cmd *cobra.Command, args []string) {
 		fmt.Printf("If your browser didn't open, please open this URL:\n\n%s\n\n", authURL)
 	}
 
+	// Start a simple HTTP server to handle the callback
 	// Start a simple HTTP server to handle the callback
 	server := &http.Server{Addr: ":8080"} // Use a specific port, e.g., :8080 based on RedirectURL
 	http.HandleFunc("/callback", func(w http.ResponseWriter, r *http.Request) {
@@ -195,6 +191,7 @@ func loginHandler(cmd *cobra.Command, args []string) {
 			PreferredUsername string `json:"preferred_username"` // Another common claim for username
 		}
 		if err := idToken.Claims(&claims); err != nil {
+			// Handle error parsing claims
 			http.Error(w, "Failed to parse claims: "+err.Error(), http.StatusInternalServerError)
 			log.Printf("Error parsing claims: %v\n", err)
 			return
@@ -212,6 +209,7 @@ func loginHandler(cmd *cobra.Command, args []string) {
 		fmt.Fprintf(w, "You can close this window now.\n")
 
 		// Optionally, shut down the server after successful login
+		// Optionally, shut down the server after successful login
 		go func() {
 			log.Println("Shutting down callback server...")
 			// Give a small delay for the response to be sent
@@ -222,6 +220,7 @@ func loginHandler(cmd *cobra.Command, args []string) {
 		}()
 	})
 
+	// Extract host:port from RedirectURL for ListenAndServe
 	// Extract host:port from RedirectURL for ListenAndServe
 	// This is basic, might need improvement for different URL formats
 	listenAddr := ":8080" // Default
@@ -235,12 +234,14 @@ func loginHandler(cmd *cobra.Command, args []string) {
 
 	fmt.Printf("Listening on %s for callback...\n", listenAddr)
 	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		// Handle server error
 		log.Fatalf("Error starting server on %s: %v", listenAddr, err) // Use log.Fatalf
 	}
 	log.Println("Callback server finished.") // Will be printed after Shutdown completes
 }
 
 func generateCommitMessageHandler(cmd *cobra.Command, args []string) {
+	// Example of using the authenticated client (you'd adapt this for your needs)
 	// Example of using the authenticated client (you'd adapt this for your needs)
 	ctx := context.Background()
 
@@ -262,6 +263,7 @@ func generateCommitMessageHandler(cmd *cobra.Command, args []string) {
 
 	httpClient, err := getAuthenticatedClient(ctx, tempOAuthConfig) // Pass potentially incomplete config
 	if err != nil {
+		// Handle error getting authenticated client
 		log.Printf("Warning: Could not retrieve or refresh authentication tokens: %v\n", err)
 		fmt.Println("Proceeding without authentication for commit message generation.")
 		httpClient = http.DefaultClient // Fallback to default client
@@ -276,6 +278,7 @@ func generateCommitMessageHandler(cmd *cobra.Command, args []string) {
 
 	diff, err := getGitDiff()
 	if err != nil {
+		// Handle error getting Git diff
 		// getGitDiff now returns an error if commands fail, handle it here
 		log.Printf("Error getting Git diff: %v\n", err)
 		fmt.Println("Could not get Git diff. Please ensure you are in a Git repository and 'git' command is available.")
@@ -290,6 +293,7 @@ func generateCommitMessageHandler(cmd *cobra.Command, args []string) {
 	reader := bufio.NewReader(os.Stdin)
 
 	// Prompt for commit type
+	// Prompt for commit type
 	fmt.Printf("Enter commit type (%s): ", strings.Join(commitMessageConfig.TypeKeywords, "|"))
 	commitType, _ := reader.ReadString('\n')
 	commitType = strings.TrimSpace(strings.ToLower(commitType))
@@ -298,6 +302,7 @@ func generateCommitMessageHandler(cmd *cobra.Command, args []string) {
 		return
 	}
 
+	// Prompt for commit scope (optional)
 	// Prompt for commit scope (optional)
 	fmt.Printf("Enter commit scope (optional, e.g., component, module, leave empty if none) (%s): ", strings.Join(commitMessageConfig.ScopeKeywords, "|"))
 	commitScope, _ := reader.ReadString('\n')
@@ -308,6 +313,7 @@ func generateCommitMessageHandler(cmd *cobra.Command, args []string) {
 		return
 	}
 
+	// Suggest a subject based on the diff (very basic)
 	// Suggest a subject based on the diff (very basic)
 	suggestedSubject := generateSuggestedSubject(diff)
 	fmt.Printf("Enter commit subject (max %d chars, suggested: '%s'): ", commitMessageConfig.MaxSubjectLength, suggestedSubject)
@@ -323,6 +329,7 @@ func generateCommitMessageHandler(cmd *cobra.Command, args []string) {
 	}
 
 	// Prompt for commit body (optional)
+	// Prompt for commit body (optional)
 	fmt.Println("Enter commit body (optional, press Enter on a blank line or Ctrl+D to finish):")
 	var commitBody strings.Builder
 	for {
@@ -336,6 +343,7 @@ func generateCommitMessageHandler(cmd *cobra.Command, args []string) {
 	}
 	commitBodyStr := strings.TrimSpace(commitBody.String()) // Trim final result
 
+	// Construct the commit message (Conventional Commits format)
 	// Construct the commit message (Conventional Commits format)
 	var commitMessage strings.Builder
 	commitMessage.WriteString(commitType)
@@ -355,6 +363,7 @@ func generateCommitMessageHandler(cmd *cobra.Command, args []string) {
 	fmt.Println("-------------------------------")
 
 	// Optionally, ask if the user wants to apply this message to a commit
+	// Optionally, ask if the user wants to apply this message to a commit
 	fmt.Print("\nDo you want to use this message for a Git commit? (y/N): ")
 	response, _ := reader.ReadString('\n')
 	response = strings.TrimSpace(strings.ToLower(response))
@@ -371,6 +380,7 @@ func generateCommitMessageHandler(cmd *cobra.Command, args []string) {
 }
 
 func getGitDiff() (string, error) {
+	// Initialize variables for staged and working diffs
 	var stagedDiff, workingDiff string
 	var stagedErrStr, workingErrStr string
 	var finalErr error // To accumulate errors
@@ -391,6 +401,7 @@ func getGitDiff() (string, error) {
 	}
 
 	// Check working directory changes
+	// Check working directory changes
 	cmdWorking := exec.Command("git", "diff")
 	var outWorking bytes.Buffer
 	var stderrWorking bytes.Buffer
@@ -410,9 +421,11 @@ func getGitDiff() (string, error) {
 	}
 
 	// Combine the diffs
+	// Combine the diffs
 	combinedDiff := strings.TrimSpace(stagedDiff + "\n" + workingDiff)
 
-	// Return the combined diff. If there were errors, return the accumulated error.
+	// Return the combined diff.
+	// If there were errors, return the accumulated error.
 	// This is slightly different from the original logic which only errored if diff was empty AND stderr was present.
 	// Now, we return an error if *any* git command failed.
 	return combinedDiff, finalErr
@@ -420,6 +433,7 @@ func getGitDiff() (string, error) {
 
 func generateSuggestedSubject(diff string) string {
 	lines := strings.Split(diff, "\n")
+	// Initialize variable for the first meaningful change
 	var firstMeaningfulChange string
 
 	for _, line := range lines {
@@ -435,6 +449,7 @@ func generateSuggestedSubject(diff string) string {
 	}
 
 	// If no added line found, look for deleted lines
+	// If no added line found, look for deleted lines
 	if firstMeaningfulChange == "" {
 		for _, line := range lines {
 			trimmedLine := strings.TrimSpace(line)
@@ -448,6 +463,7 @@ func generateSuggestedSubject(diff string) string {
 		}
 	}
 
+	// If still nothing, try to get a filename
 	// If still nothing, try to get a filename
 	if firstMeaningfulChange == "" {
 		for _, line := range lines {
@@ -465,6 +481,7 @@ func generateSuggestedSubject(diff string) string {
 		}
 	}
 
+	// Final fallback and length limiting
 	// Final fallback and length limiting
 	if firstMeaningfulChange == "" {
 		firstMeaningfulChange = "Update code" // Generic fallback
@@ -484,6 +501,7 @@ func generateSuggestedSubject(diff string) string {
 
 func commitWithGeneratedMessage(message string) error {
 	// Use -F - to read the message from stdin, handles multi-line messages correctly
+	// Use -F - to read the message from stdin, handles multi-line messages correctly
 	cmd := exec.Command("git", "commit", "-F", "-")
 	cmd.Stdin = strings.NewReader(message) // Pipe the message to stdin
 	cmd.Stdout = os.Stdout
@@ -492,11 +510,13 @@ func commitWithGeneratedMessage(message string) error {
 }
 
 func generateRandomString(n int) (string, error) {
+	// Generate a random string of length n
 	b := make([]byte, n)
 	if _, err := rand.Read(b); err != nil {
 		return "", fmt.Errorf("failed to generate random string: %w", err) // Use fmt.Errorf
 	}
-	// Use RawURLEncoding to avoid padding characters ('=') which might cause issues in URLs
+	// Use RawURLEncoding to avoid padding characters ('=')
+	// which might cause issues in URLs
 	return base64.RawURLEncoding.EncodeToString(b), nil
 }
 
@@ -511,6 +531,7 @@ func contains(slice []string, item string) bool {
 }
 
 func storeTokens(tokens *oauth2.Token) error {
+	// Ensure RefreshToken is included if present
 	// Ensure RefreshToken is included if present
 	idTokenStr := ""
 	if idToken, ok := tokens.Extra("id_token").(string); ok {
@@ -530,6 +551,7 @@ func storeTokens(tokens *oauth2.Token) error {
 	err = keyring.Set(serviceName, userName, string(tokensJSON))
 	if err != nil {
 		// Provide more context about the keyring error if possible
+		// Provide more context about the keyring error if possible
 		return fmt.Errorf("failed to store tokens in keyring (service=%s, user=%s): %w", serviceName, userName, err)
 	}
 	log.Printf("Tokens stored successfully in keyring for service=%s, user=%s", serviceName, userName)
@@ -537,6 +559,7 @@ func storeTokens(tokens *oauth2.Token) error {
 }
 
 func retrieveTokens() (*oauth2.Token, error) {
+	// Retrieve tokens from keyring
 	tokensJSON, err := keyring.Get(serviceName, userName)
 	if err != nil {
 		// *** THE FIX IS HERE (already present in your code) ***
@@ -551,6 +574,7 @@ func retrieveTokens() (*oauth2.Token, error) {
 	}
 
 	var t Tokens
+	// If unmarshalling fails, the stored data might be corrupt.
 	if err := json.Unmarshal([]byte(tokensJSON), &t); err != nil {
 		// If unmarshalling fails, the stored data might be corrupt.
 		log.Printf("Failed to unmarshal stored tokens for service=%s, user=%s. Data might be corrupt. Error: %v", serviceName, userName, err)
@@ -560,6 +584,7 @@ func retrieveTokens() (*oauth2.Token, error) {
 	}
 
 	// Reconstruct the oauth2.Token
+	// Reconstruct the oauth2.Token
 	token := &oauth2.Token{
 		AccessToken:  t.AccessToken,
 		RefreshToken: t.RefreshToken,
@@ -567,6 +592,7 @@ func retrieveTokens() (*oauth2.Token, error) {
 		TokenType:    "Bearer", // Assuming Bearer token type
 	}
 
+	// Add ID token back if it exists
 	// Add ID token back if it exists
 	if t.IDToken != "" {
 		token = token.WithExtra(map[string]interface{}{
@@ -579,11 +605,13 @@ func retrieveTokens() (*oauth2.Token, error) {
 }
 
 func refreshToken(ctx context.Context, config *oauth2.Config, currentToken *oauth2.Token) (*oauth2.Token, error) {
+	// Check if a refresh token is available
 	if currentToken.RefreshToken == "" {
 		return nil, errors.New("no refresh token available to refresh")
 	}
 	// Check if the config has endpoint info needed for refresh
 	if config.Endpoint.AuthURL == "" || config.Endpoint.TokenURL == "" {
+		// This happens if getAuthenticatedClient was called without full provider info
 		// This happens if getAuthenticatedClient was called without full provider info
 		// We need to re-discover the provider endpoint based on stored info or config
 		log.Println("Attempting to refresh token, but OIDC provider endpoint info is missing. Re-discovering...")
@@ -603,10 +631,12 @@ func refreshToken(ctx context.Context, config *oauth2.Config, currentToken *oaut
 		// --- End Example ---
 	}
 
+	// Use currentToken which includes RefreshToken
 	src := config.TokenSource(ctx, currentToken) // Use currentToken which includes RefreshToken
 	newToken, err := src.Token()                 // This performs the refresh using the RefreshToken
 	if err != nil {
-		// Check for specific OAuth2 errors like invalid_grant (refresh token expired/revoked)
+		// Check for specific OAuth2 errors like invalid_grant
+		// (refresh token expired/revoked)
 		if oauthErr, ok := err.(*oauth2.RetrieveError); ok {
 			if strings.Contains(string(oauthErr.Body), "invalid_grant") {
 				log.Println("Refresh token is invalid or expired. User needs to login again.")
@@ -625,6 +655,7 @@ func refreshToken(ctx context.Context, config *oauth2.Config, currentToken *oaut
 }
 
 func getAuthenticatedClient(ctx context.Context, config *oauth2.Config) (*http.Client, error) {
+	// Retrieve stored tokens
 	storedToken, err := retrieveTokens()
 	if err != nil {
 		// retrieveTokens already logs details, just wrap the error for the caller
@@ -637,6 +668,7 @@ func getAuthenticatedClient(ctx context.Context, config *oauth2.Config) (*http.C
 	}
 
 	// Check if token is expired or close to expiring (e.g., within 5 minutes)
+	// Check if token is expired or close to expiring (e.g., within 5 minutes)
 	// Use a small buffer to avoid using a token right before it expires.
 	if !storedToken.Valid() || time.Until(storedToken.Expiry) < 5*time.Minute {
 		log.Printf("Stored token is expired or nearing expiry (valid: %t, expires in: %s). Attempting refresh...", storedToken.Valid(), time.Until(storedToken.Expiry).Round(time.Second))
@@ -644,6 +676,7 @@ func getAuthenticatedClient(ctx context.Context, config *oauth2.Config) (*http.C
 		if refreshErr != nil {
 			// Handle refresh failure (user might need to log in again)
 			log.Printf("Failed to refresh token: %v. Returning default HTTP client.", refreshErr)
+			// Decide if we should delete the expired/unrefreshable token
 			// Decide if we should delete the expired/unrefreshable token
 			// errDel := keyring.Delete(serviceName, userName)
 			// if errDel != nil {
@@ -654,6 +687,7 @@ func getAuthenticatedClient(ctx context.Context, config *oauth2.Config) (*http.C
 			return http.DefaultClient, fmt.Errorf("token refresh failed: %w", refreshErr)
 		}
 
+		// Refresh succeeded, store the new token
 		// Refresh succeeded, store the new token
 		if storeErr := storeTokens(newToken); storeErr != nil {
 			// Log the error, but proceed with the new token for this session
