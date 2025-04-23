@@ -7,5 +7,5 @@ import (
 )
 
 func main() {
-	fmt.Println(keyring.ErrNoSecret)
+	fmt.Println(keyring.ErrNotFound)
 }
