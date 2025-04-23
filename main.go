@@ -541,7 +541,7 @@ func retrieveTokens() (*oauth2.Token, error) {
 	if err != nil {
 		// *** THE FIX IS HERE (already present in your code) ***
 		// Use errors.Is() for robust error checking, handles wrapped errors.
-		if errors.Is(err, keyring.ErrNoSecret) {
+		if errors.Is(err, keyring.ErrNotFound) {
 			log.Printf("No tokens found in keyring for service=%s, user=%s. User needs to login.", serviceName, userName)
 			return nil, nil // No tokens stored yet, not an application error
 		}
